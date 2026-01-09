@@ -1,0 +1,20 @@
+{
+  "friends": [],
+  "root": [
+    {
+      "name": ".private",
+      "type": "folder",
+      "children": []
+    },
+    {
+      "name": "shared",
+      "type": "folder",
+      "children": []
+    },
+    {
+      "name": "archive",
+      "type": "folder",
+      "children": []
+    }
+  ]
+}

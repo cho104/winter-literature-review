@@ -1,0 +1,101 @@
+name: Batch Command Processor
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  process-batch:
+    if: startsWith(github.event.issue.title, 'batch:')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Database
+        uses: actions/checkout@v3
+
+      - name: Process Command Queue
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            let batch;
+            try { batch = JSON.parse(context.payload.issue.body); } 
+            catch (e) { console.log("Invalid JSON"); return; }
+
+            let data = JSON.parse(fs.readFileSync('data.json', 'utf8'));
+            let modified = false;
+
+            // Helpers
+            const findFile = (items, url) => {
+                for (let item of items) {
+                    if (item.type === 'file' && item.url === url) return item;
+                    if (item.type === 'folder') {
+                        const found = findFile(item.children, url);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            };
+
+            const removeFile = (items, url) => {
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type === 'file' && items[i].url === url) {
+                        return items.splice(i, 1)[0];
+                    }
+                    if (items[i].type === 'folder') {
+                        const removed = removeFile(items[i].children, url);
+                        if (removed) return removed;
+                    }
+                }
+                return null;
+            };
+
+            // Loop Commands
+            for (const cmd of batch.commands) {
+                if (cmd.type === 'add') {
+                    const folder = data.root.find(f => f.name === cmd.folder);
+                    if (folder) {
+                        folder.children.push(cmd.payload);
+                        modified = true;
+                    }
+                }
+                else if (cmd.type === 'review') {
+                    const file = findFile(data.root, cmd.url);
+                    if (file) {
+                        if (!file.reviews) file.reviews = [];
+                        file.reviews = file.reviews.filter(r => r.user !== cmd.user);
+                        file.reviews.push({ user: cmd.user, text: cmd.text });
+                        modified = true;
+                    }
+                }
+                else if (cmd.type === 'merge') {
+                    const fileObj = removeFile(data.root, cmd.url);
+                    if (fileObj) {
+                        const archive = data.root.find(f => f.name === 'archive');
+                        if (!fileObj.reviews) fileObj.reviews = [];
+                        fileObj.reviews.push({ user: "SYSTEM", text: `Merged on ${new Date().toISOString()}` });
+                        archive.children.push(fileObj);
+                        modified = true;
+                    }
+                }
+            }
+
+            if (modified) {
+                fs.writeFileSync('data.json', JSON.stringify(data, null, 2));
+            }
+
+      - name: Commit Changes
+        run: |
+          git config --global user.name 'BatchBot'
+          git config --global user.email 'bot@noreply.github.com'
+          git add data.json
+          git commit -m "Processed batch ${{ github.event.issue.number }}"
+          git push
+
+      - name: Close Issue
+        uses: peter-evans/close-issue@v3
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          comment: "Batch processed successfully."

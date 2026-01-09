@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>~/bookmarks</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="terminal-window">
+        <div class="top-bar">
+            <div class="buttons">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <button id="sync-btn" class="sync-btn" style="display:none;">⚠ Sync Changes</button>
+            </div>
+            <div class="user-host">user@github:~/bookmarks</div>
+        </div>
+
+        <div class="content-area">
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <span>FILESYSTEM</span>
+                    <button id="add-btn" class="icon-btn" title="Add New">+</button>
+                </div>
+                <div id="file-tree">Loading...</div>
+            </div>
+
+            <div class="viewer" id="viewer-panel">
+                <div class="empty-state">
+                    <p>> Select a file to read_</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-overlay" class="hidden">
+        <div class="modal">
+            <h3>Add Bookmark</h3>
+            <input type="text" id="inp-url" placeholder="https://site.com">
+            <input type="text" id="inp-title" placeholder="Title (optional)">
+            <select id="inp-folder">
+                <option value=".private">.private (Me)</option>
+                <option value="shared">shared (Friends)</option>
+            </select>
+            <div class="modal-actions">
+                <button id="modal-cancel">Cancel</button>
+                <button id="modal-save">Add to Queue</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
