@@ -39,6 +39,17 @@ jobs:
                 return null;
             };
 
+            const findParentFolder = (items, url) => {
+                for (let item of items) {
+                    if (item.type === 'folder') {
+                        if (item.children.some(child => child.type === 'file' && child.url === url)) return item;
+                        const found = findParentFolder(item.children, url);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            };
+
             const removeFile = (items, url) => {
                 for (let i = 0; i < items.length; i++) {
                     if (items[i].type === 'file' && items[i].url === url) {
@@ -52,38 +63,71 @@ jobs:
                 return null;
             };
 
+            const checkExists = (folderName, url) => {
+                const folder = data.root.find(f => f.name === folderName);
+                if (!folder) return false;
+                return folder.children.some(c => c.type === 'file' && c.url === url);
+            };
+
             // --- EXECUTE ---
             for (const cmd of batch.commands) {
+                
                 // 1. ADD
                 if (cmd.type === 'add') {
+                    // Rule: Reject add if duplicate exists in .private or shared
+                    if (cmd.folder !== 'archive' && checkExists(cmd.folder, cmd.payload.url)) {
+                        console.log(`Duplicate rejected: ${cmd.payload.url} in ${cmd.folder}`);
+                        continue;
+                    }
+
                     const folder = data.root.find(f => f.name === cmd.folder);
                     if (folder) {
                         folder.children.push(cmd.payload);
                         modified = true;
                     }
                 }
-                // 2. REVIEW
+
+                // 2. REVIEW (TRIGGER AUTO ARCHIVE)
                 else if (cmd.type === 'review') {
                     const file = findFile(data.root, cmd.url);
                     if (file) {
+                        // Add Review
                         if (!file.reviews) file.reviews = [];
                         file.reviews = file.reviews.filter(r => r.user !== cmd.user);
                         file.reviews.push({ user: cmd.user, text: cmd.text });
                         modified = true;
+
+                        // Check Auto-Archive Logic
+                        const parent = findParentFolder(data.root, cmd.url);
+                        
+                        // We only auto-archive if it's not already in archive
+                        if (parent && parent.name !== 'archive') {
+                            let threshold = 1; // Default for .private
+                            
+                            // If in shared, threshold is number of friends
+                            if (parent.name === 'shared') {
+                                threshold = (data.friends && data.friends.length > 0) ? data.friends.length : 1;
+                            }
+
+                            if (file.reviews.length >= threshold) {
+                                console.log(`Auto-archiving ${file.title}. Reviews: ${file.reviews.length}, Threshold: ${threshold}`);
+                                const fileObj = removeFile(data.root, cmd.url);
+                                const archive = data.root.find(f => f.name === 'archive');
+                                // Duplicates allowed in archive, so just push
+                                archive.children.push(fileObj);
+                            }
+                        }
                     }
                 }
-                // 3. MERGE (To Archive)
-                else if (cmd.type === 'merge') {
-                    const fileObj = removeFile(data.root, cmd.url);
-                    if (fileObj) {
-                        const archive = data.root.find(f => f.name === 'archive');
-                        fileObj.reviews.push({ user: "SYSTEM", text: `Merged on ${new Date().toISOString()}` });
-                        archive.children.push(fileObj);
-                        modified = true;
-                    }
-                }
-                // 4. MOVE (New)
+
+                // 3. MOVE
                 else if (cmd.type === 'move') {
+                    // Rule: Reject move if duplicate exists in destination (unless dest is archive)
+                    if (cmd.target !== 'archive' && checkExists(cmd.target, cmd.url)) {
+                        console.log(`Move rejected: ${cmd.url} already exists in ${cmd.target}`);
+                        continue;
+                    }
+
                     const fileObj = removeFile(data.root, cmd.url);
                     if (fileObj) {
                         const targetFolder = data.root.find(f => f.name === cmd.target);
@@ -93,7 +137,8 @@ jobs:
                         }
                     }
                 }
-                // 5. DELETE (New)
+
+                // 4. DELETE
                 else if (cmd.type === 'delete') {
                     const removed = removeFile(data.root, cmd.url);
                     if (removed) modified = true;
