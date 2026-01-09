@@ -10,7 +10,12 @@
           "type": "file",
           "url": "https://arxiv.org/abs/2509.26507",
           "title": "Paper",
-          "reviews": [],
+          "reviews": [
+            {
+              "user": "cho104",
+              "text": "mmopkjop"
+            }
+          ],
           "points": []
         }
       ]
