@@ -4,7 +4,16 @@
     {
       "name": ".private",
       "type": "folder",
-      "children": []
+      "children": [
+        {
+          "name": "paper.lnk",
+          "type": "file",
+          "url": "https://arxiv.org/abs/2509.26507",
+          "title": "Paper",
+          "reviews": [],
+          "points": []
+        }
+      ]
     },
     {
       "name": "shared",
