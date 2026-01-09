@@ -8,6 +8,19 @@
 </head>
 <body>
 
+    <div id="startup-overlay">
+        <div class="instruction-box">
+            <h1>~/bookmarks</h1>
+            <ul>
+                <li><strong>[ + ]</strong> Click to Add a Link</li>
+                <li><strong>[ Drag ]</strong> Move files to folders</li>
+                <li><strong>[ Trash ]</strong> Drag files here to delete</li>
+                <li><strong>[ Sync ]</strong> Click the orange button to save changes</li>
+            </ul>
+            <p class="blink">_Click anywhere to start</p>
+        </div>
+    </div>
+
     <div class="terminal-window">
         <div class="top-bar">
             <div class="buttons">
@@ -26,6 +39,10 @@
                     <button id="add-btn" class="icon-btn" title="Add New">+</button>
                 </div>
                 <div id="file-tree">Loading...</div>
+                
+                <div id="trash-zone" class="trash-zone">
+                    🗑️ Trash
+                </div>
             </div>
 
             <div class="viewer" id="viewer-panel">

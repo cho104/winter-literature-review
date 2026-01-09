@@ -2,12 +2,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let fileSystem = { root: [], friends: [] };
     let commandQueue = JSON.parse(localStorage.getItem('fs_queue')) || [];
     let currentUser = "user";
+    let draggedFile = null;
     const treeContainer = document.getElementById('file-tree');
     const viewerPanel = document.getElementById('viewer-panel');
     const syncBtn = document.getElementById('sync-btn');
+    const trashZone = document.getElementById('trash-zone');
     init();
-
     function init() {
+        document.getElementById('startup-overlay').onclick = function() {
+            this.style.display = 'none';
+        }
         setIdentity();
         updateSyncButton();
         fetch('data.json')
@@ -17,19 +21,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderAll();
             })
             .catch(err => console.error("Error loading filesystem:", err));
+        setupTrash();
     }
-
     function setIdentity() {
         const hostname = window.location.hostname;
+        const pathname = window.location.pathname;
+        let displayUser = "local_dev";
+        let displayHost = "localhost";
         if (hostname.includes('github.io')) {
-            currentUser = hostname.split('.')[0];
-        } else {
-            currentUser = "local_dev";
+            displayUser = hostname.split('.')[0];
+            const repo = pathname.replace(/^\/|\/$/g, ''); 
+            displayHost = repo || 'github';
         }
-        document.querySelector('.user-host').textContent = `${currentUser}@${hostname}:~/bookmarks`;
-        document.title = `~/bookmarks - ${currentUser}`;
+        currentUser = displayUser;
+        const prompt = `${displayUser}@${displayHost}:~/bookmarks`;
+        document.querySelector('.user-host').textContent = prompt;
+        document.title = prompt;
     }
-
     function renderAll() {
         treeContainer.innerHTML = '';
         renderTree(fileSystem.root, treeContainer);
@@ -41,24 +49,36 @@ document.addEventListener('DOMContentLoaded', () => {
             treeContainer.appendChild(mnt);
         }
     }
-
     function renderTree(items, container) {
         if (!items) return;
         items.forEach(item => {
             if (item.type === 'folder') {
-                const folder = createFolderDOM(item.name);
-                container.appendChild(folder);
-                renderTree(item.children, folder.querySelector('.nested'));
+                const folderDiv = createFolderDOM(item.name);
+                const titleDiv = folderDiv.querySelector('.tree-item');
+                setupDropZone(titleDiv, (droppedUrl) => {
+                    handleMove(droppedUrl, item.name);
+                });
+                container.appendChild(folderDiv);
+                renderTree(item.children, folderDiv.querySelector('.nested'));
             } else {
                 const file = document.createElement('div');
                 file.className = 'tree-item file';
                 file.textContent = item.name;
+                file.draggable = true;
+                file.addEventListener('dragstart', (e) => {
+                    draggedFile = item;
+                    e.dataTransfer.setData('text/plain', item.url);
+                    file.style.opacity = '0.5';
+                });
+                file.addEventListener('dragend', () => {
+                    file.style.opacity = '1';
+                    draggedFile = null;
+                });
                 file.onclick = () => loadFileDetails(item);
                 container.appendChild(file);
             }
         });
     }
-
     function createFolderDOM(name, open=false) {
         const div = document.createElement('div');
         const title = document.createElement('div');
@@ -66,14 +86,56 @@ document.addEventListener('DOMContentLoaded', () => {
         title.textContent = name;
         const nested = document.createElement('div');
         nested.className = `nested ${open?'active':''}`;
-        title.onclick = () => {
+        title.onclick = (e) => {
             title.classList.toggle('open');
             nested.classList.toggle('active');
         };
         div.append(title, nested);
         return div;
     }
-
+    function setupDropZone(element, callback) {
+        element.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            element.classList.add('drag-over');
+        });
+        element.addEventListener('dragleave', () => {
+            element.classList.remove('drag-over');
+        });
+        element.addEventListener('drop', (e) => {
+            e.preventDefault();
+            element.classList.remove('drag-over');
+            const url = e.dataTransfer.getData('text/plain');
+            if(draggedFile && draggedFile.url === url) {
+                callback(url);
+            }
+        });
+    }
+    function setupTrash() {
+        setupDropZone(trashZone, (url) => {
+            if(confirm("Delete this bookmark?")) {
+                handleDelete(url);
+            }
+        });
+    }
+    function handleMove(url, targetFolderName) {
+        queueAction({ type: 'move', url: url, target: targetFolderName });
+        alert(`Move queued! Sync to finalize moving ${draggedFile.name} to ${targetFolderName}.`);
+    }
+    function handleDelete(url) {
+        const removeNode = (items) => {
+            const idx = items.findIndex(i => i.url === url);
+            if(idx > -1) { items.splice(idx, 1); return true; }
+            for(let item of items) {
+                if(item.type === 'folder' && item.children) {
+                    if(removeNode(item.children)) return true;
+                }
+            }
+            return false;
+        };
+        removeNode(fileSystem.root);
+        renderAll();
+        queueAction({ type: 'delete', url: url });
+    }
     function loadFileDetails(file) {
         const isReadOnly = !JSON.stringify(fileSystem.root).includes(JSON.stringify(file));
         const domain = new URL(file.url).hostname;
@@ -89,37 +151,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         <a href="${file.url}" target="_blank" class="visit-link">[ ${file.url} ]</a>
                     </div>
                 </div>
-
                 <div class="review-section">
-                    <h3>
-                        // MY REVIEW
-                        ${!isReadOnly ? `<button onclick="saveCurrentReview()" class="action-btn">Save to Queue</button>` : ''}
-                    </h3>
+                    <h3>// MY REVIEW ${!isReadOnly ? `<button onclick="saveCurrentReview()" class="action-btn">Save to Queue</button>` : ''}</h3>
                     <div id="editor-review" contenteditable="${!isReadOnly}" class="review-text">${myReviewObj.text}</div>
                 </div>
-
                 <div class="review-section">
                     <h3>// OTHER REVIEWS</h3>
                     <div style="font-size:0.9rem; color:#888;">
                         ${otherReviews.length ? otherReviews.map(r => `<p><span class="reviewer-tag">@${r.user}:</span> ${r.text}</p>`).join('') : 'No other reviews.'}
                     </div>
                 </div>
-
-                ${!isReadOnly ? `
-                <div class="file-controls">
-                    <button class="btn-merge" onclick="tryMerge('${file.url}')">⚡ Merge to Archive</button>
-                </div>` : ''}
+                ${!isReadOnly ? `<div class="file-controls"><button class="btn-merge" onclick="tryMerge('${file.url}')">⚡ Merge to Archive</button></div>` : ''}
             </div>
         `;
         viewerPanel.innerHTML = html;
     }
-
     function queueAction(cmd) {
         commandQueue.push(cmd);
         localStorage.setItem('fs_queue', JSON.stringify(commandQueue));
         updateSyncButton();
     }
-
     function updateSyncButton() {
         if(commandQueue.length > 0) {
             syncBtn.style.display = 'block';
@@ -128,7 +179,6 @@ document.addEventListener('DOMContentLoaded', () => {
             syncBtn.style.display = 'none';
         }
     }
-
     const modal = document.getElementById('modal-overlay');
     document.getElementById('add-btn').onclick = () => modal.classList.remove('hidden');
     document.getElementById('modal-cancel').onclick = () => modal.classList.add('hidden');
@@ -154,30 +204,17 @@ document.addEventListener('DOMContentLoaded', () => {
         alert("Review queued!");
     };
     window.tryMerge = (url) => {
-        let file = null;
-        fileSystem.root.forEach(f => f.children.forEach(c => { if(c.url === url) file = c; }));
-        const isShared = fileSystem.root.find(f => f.name === 'shared').children.includes(file);
-        if(isShared) {
-            const reviewers = new Set((file.reviews || []).map(r => r.user));
-            const required = 1 + (fileSystem.friends ? fileSystem.friends.length : 0);
-            if(reviewers.size < required) {
-                alert(`Cannot merge yet. Reviews: ${reviewers.size}/${required}. Waiting for others.`);
-                return;
-            }
-        }
         queueAction({ type: 'merge', url: url });
-        alert("Merge queued");
+        alert("Merge queued!");
     };
     syncBtn.onclick = () => {
         if(!confirm(`Push ${commandQueue.length} changes to GitHub?`)) return;
         const payload = { commands: commandQueue };
-        let repoPath = "YOUR_USERNAME/YOUR_REPO";
-        const parts = window.location.hostname.split('.');
-        if(parts.length > 1) {
-            const user = parts[0];
-            const repo = window.location.pathname.replace(/^\/|\/$/g, '');
-            repoPath = `${user}/${repo || 'bookmarks'}`; 
-        }
+        const hostname = window.location.hostname;
+        const pathname = window.location.pathname.replace(/^\/|\/$/g, '');
+        const user = hostname.split('.')[0];
+        const repo = pathname || 'bookmarks';
+        const repoPath = `${user}/${repo}`;
         const body = encodeURIComponent(JSON.stringify(payload));
         const issueUrl = `https://github.com/${repoPath}/issues/new?title=batch:update&body=${body}`;
         window.open(issueUrl, '_blank');
@@ -185,17 +222,11 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.removeItem('fs_queue');
         updateSyncButton();
     };
-
     function mountFriend(friend, container) {
-        fetch(friend.url)
-            .then(res => res.json())
-            .then(data => {
-                const friendRoot = document.createElement('div');
-                renderTree(data.root, friendRoot);
-                container.appendChild(friendRoot);
-            })
-            .catch(() => {
-                container.innerHTML = '<div style="color:red; padding:5px;">Connection Failed</div>';
-            });
+        fetch(friend.url).then(res=>res.json()).then(data=>{
+            const friendRoot = document.createElement('div');
+            renderTree(data.root, friendRoot);
+            container.appendChild(friendRoot);
+        });
     }
 });

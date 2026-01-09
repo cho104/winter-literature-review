@@ -27,7 +27,7 @@ jobs:
             let data = JSON.parse(fs.readFileSync('data.json', 'utf8'));
             let modified = false;
 
-            // Helpers
+            // --- HELPERS ---
             const findFile = (items, url) => {
                 for (let item of items) {
                     if (item.type === 'file' && item.url === url) return item;
@@ -52,8 +52,9 @@ jobs:
                 return null;
             };
 
-            // Loop Commands
+            // --- EXECUTE ---
             for (const cmd of batch.commands) {
+                // 1. ADD
                 if (cmd.type === 'add') {
                     const folder = data.root.find(f => f.name === cmd.folder);
                     if (folder) {
@@ -61,6 +62,7 @@ jobs:
                         modified = true;
                     }
                 }
+                // 2. REVIEW
                 else if (cmd.type === 'review') {
                     const file = findFile(data.root, cmd.url);
                     if (file) {
@@ -70,15 +72,31 @@ jobs:
                         modified = true;
                     }
                 }
+                // 3. MERGE (To Archive)
                 else if (cmd.type === 'merge') {
                     const fileObj = removeFile(data.root, cmd.url);
                     if (fileObj) {
                         const archive = data.root.find(f => f.name === 'archive');
-                        if (!fileObj.reviews) fileObj.reviews = [];
                         fileObj.reviews.push({ user: "SYSTEM", text: `Merged on ${new Date().toISOString()}` });
                         archive.children.push(fileObj);
                         modified = true;
                     }
+                }
+                // 4. MOVE (New)
+                else if (cmd.type === 'move') {
+                    const fileObj = removeFile(data.root, cmd.url);
+                    if (fileObj) {
+                        const targetFolder = data.root.find(f => f.name === cmd.target);
+                        if (targetFolder) {
+                            targetFolder.children.push(fileObj);
+                            modified = true;
+                        }
+                    }
+                }
+                // 5. DELETE (New)
+                else if (cmd.type === 'delete') {
+                    const removed = removeFile(data.root, cmd.url);
+                    if (removed) modified = true;
                 }
             }
 
@@ -98,4 +116,4 @@ jobs:
         uses: peter-evans/close-issue@v3
         with:
           issue-number: ${{ github.event.issue.number }}
-          comment: "Batch processed successfully."
+          comment: "Batch processed."
